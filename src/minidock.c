@@ -8,6 +8,7 @@
 #include <signal.h>
 #include <wait.h>
 #include <string.h>
+#include <sys/mount.h>
 
 #define errP(err) do { \
     perror(err);\
@@ -22,6 +23,11 @@ int uts_func(void *arg) {
     pid_t pid;
     struct utsname uts;
     char **args = (char **)arg;
+
+    if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) == -1) {
+        errP("make private failed\n");
+    }
+
     int rv = sethostname(args[0], strlen(args[0]));
 
     if (rv != 0) {
@@ -36,6 +42,12 @@ int uts_func(void *arg) {
 
     printf("Nodename in child is %s\n", uts.nodename);
     printf("Process id of the child in his namespace is %d\n", pid);
+
+    mount("proc", "/proc", "proc", 0, NULL);
+
+    if(rv != 0) {
+        errP("proc mount failure\n");
+    }
 
 
     printf("\n\n***************************\n");
@@ -55,7 +67,7 @@ int main(int argc, char **argv) {
         errP("hostname or command not given");
     }
 
-    child_pid = clone(uts_func, uts_stack + STACK_SIZE, SIGCHLD | CLONE_NEWUTS | CLONE_NEWPID , &argv[1]);
+    child_pid = clone(uts_func, uts_stack + STACK_SIZE, SIGCHLD | CLONE_NEWUTS | CLONE_NEWPID | CLONE_NEWNS, &argv[1]);
 
     if (child_pid == -1) {
         errP("clone failure");
