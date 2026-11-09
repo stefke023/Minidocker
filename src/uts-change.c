@@ -19,6 +19,7 @@
 char uts_stack[STACK_SIZE];
 
 int uts_func(void *arg) {
+    pid_t pid;
     struct utsname uts;
     char *name = (char *)arg;
     int rv = sethostname(name, strlen(name));
@@ -31,8 +32,10 @@ int uts_func(void *arg) {
         errP("uts get failure");
     }
 
-    printf("Nodename in child is %s\n", uts.nodename);
+    pid = getpid();
 
+    printf("Nodename in child is %s\n", uts.nodename);
+    printf("Process id of the child in his namespace is %d\n", pid);
     return 0;
 }
 
@@ -45,7 +48,7 @@ int main(int argc, char **argv) {
         errP("hostname not given");
     }
 
-    child_pid = clone(uts_func, uts_stack + STACK_SIZE, SIGCHLD | CLONE_NEWUTS, argv[1]);
+    child_pid = clone(uts_func, uts_stack + STACK_SIZE, SIGCHLD | CLONE_NEWUTS | CLONE_NEWPID , argv[1]);
 
     if (child_pid == -1) {
         errP("clone failure");
