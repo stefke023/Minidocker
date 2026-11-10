@@ -9,6 +9,9 @@
 #include <wait.h>
 #include <string.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <sys/syscall.h>
 
 #define errP(err) do { \
     perror(err);\
@@ -18,6 +21,18 @@
 #define STACK_SIZE (1024 * 1024)
 
 char uts_stack[STACK_SIZE];
+
+int pivot_root(const char *rootfs, const char *tmp_rootfs) {
+    if (syscall(SYS_pivot_root, rootfs, tmp_rootfs) == -1)
+        return -1;
+
+    return chdir("/");
+}
+
+void usage(void) {
+    printf("You didn't call program as you should\n");
+    printf("sudo ./build/program.out <hostname> <rootfs_path> <command> [args...]\n");
+}
 
 int uts_func(void *arg) {
     pid_t pid;
@@ -43,15 +58,37 @@ int uts_func(void *arg) {
     printf("Nodename in child is %s\n", uts.nodename);
     printf("Process id of the child in his namespace is %d\n", pid);
 
-    mount("proc", "/proc", "proc", 0, NULL);
+    char *rootfs = args[1];
 
-    if(rv != 0) {
+    if (mount(rootfs, rootfs, NULL, MS_REC | MS_BIND , NULL) == -1) {
+        errP("binding new rootfs failed\n");
+    }
+
+    size_t tmp_size = strlen(rootfs) + strlen("/oldroot") + 1;
+    char *rootfs_tmp = (char *)malloc(tmp_size);
+    snprintf(rootfs_tmp, tmp_size, "%s%s", rootfs, "/oldroot");
+
+    if (mkdir(rootfs_tmp, 0755) == -1 && errno != EEXIST) {
+        errP("binding tmp rootfs failed\n");
+    }
+
+    if (pivot_root(rootfs, rootfs_tmp) == -1) {
+        errP("changing to a new root failed");
+    }
+
+    if (umount2("/oldroot", MNT_DETACH) == -1) {
+        errP("umounting tmp rootfs failed\n");
+    }
+
+    free(rootfs_tmp);
+    rootfs_tmp = NULL;
+
+    if (mount("proc", "/proc", "proc", 0, NULL) == -1) {
         errP("proc mount failure\n");
     }
 
-
     printf("\n\n***************************\n");
-    execvp(args[1], &args[1]);
+    execvp(args[2], &args[2]);
 
     errP("command call failure");
 
@@ -63,8 +100,9 @@ int main(int argc, char **argv) {
     pid_t child_pid;
     struct utsname uts;
 
-    if (argc < 3) {
-        errP("hostname or command not given");
+    if (argc < 4) {
+        usage();
+        errP("invalid program call");
     }
 
     child_pid = clone(uts_func, uts_stack + STACK_SIZE, SIGCHLD | CLONE_NEWUTS | CLONE_NEWPID | CLONE_NEWNS, &argv[1]);
