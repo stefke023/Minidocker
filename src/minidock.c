@@ -66,6 +66,9 @@ int uts_func(void *arg) {
 
     size_t tmp_size = strlen(rootfs) + strlen("/oldroot") + 1;
     char *rootfs_tmp = (char *)malloc(tmp_size);
+    if (rootfs_tmp == NULL) {
+        errP("malloc allocation failure");
+    }
     snprintf(rootfs_tmp, tmp_size, "%s%s", rootfs, "/oldroot");
 
     if (mkdir(rootfs_tmp, 0755) == -1 && errno != EEXIST) {
